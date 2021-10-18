@@ -1,7 +1,11 @@
 package com.example.bletest
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
@@ -14,28 +18,31 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import com.google.android.material.snackbar.Snackbar
+import android.view.Menu
+import android.view.MenuItem
+import android.widget.TextView
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.navigation.findNavController
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
-import android.view.Menu
-import android.view.MenuItem
-import android.widget.TextView
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import com.example.bletest.databinding.ActivityMainBinding
-import org.w3c.dom.Text
 
 private const val ENABLE_BLUETOOTH_REQUEST_CODE = 1
 private const val LOCATION_PERMISSION_REQUEST_CODE = 2
+private const val PENDING_INTENT_REQUEST_CODE = 3
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityMainBinding
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -48,15 +55,17 @@ class MainActivity : AppCompatActivity() {
         appBarConfiguration = AppBarConfiguration(navController.graph)
         setupActionBarWithNavController(navController, appBarConfiguration)
 
+        /* */
+        createNotificationChannel()
+
+        /* */
         binding.fab.setOnClickListener { //view ->
 //            Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
 //                .setAction("Action", null).show()
             if (isScanning) {
                 stopBleScan()
-//                findViewById<TextView>(R.id.scanStateText).setText(R.string.Stopped)
             } else {
                 startBleScan()
-//                findViewById<TextView>(R.id.scanStateText).setText(R.string.Scanning)
             }
         }
     }
@@ -112,7 +121,6 @@ class MainActivity : AppCompatActivity() {
         when (requestCode) {
             ENABLE_BLUETOOTH_REQUEST_CODE -> {
                 if (resultCode != Activity.RESULT_OK) {
-//                    promptEnableBluetooth()
                     Log.i("ble_test","BLE is not enabled.")
                 } else {
                     Log.i("ble_test","BLE is enabled.")
@@ -136,20 +144,6 @@ class MainActivity : AppCompatActivity() {
         }
         Log.i("ble_test","Fine location permission is required.")
         requestPermission(Manifest.permission.ACCESS_FINE_LOCATION, LOCATION_PERMISSION_REQUEST_CODE)
-//        runOnUiThread {
-//            alert {
-//                title = "Location permission required"
-//                message = "Starting from Android M (6.0), the system requires apps to be granted " +
-//                        "location access in order to scan for BLE devices."
-//                isCancelable = false
-//                positiveButton(android.R.string.ok) {
-//                    requestPermission(
-//                        Manifest.permission.ACCESS_FINE_LOCATION,
-//                        LOCATION_PERMISSION_REQUEST_CODE
-//                    )
-//                }
-//            }.show()
-//        }
     }
 
     private fun Activity.requestPermission(permission: String, requestCode: Int) {
@@ -165,7 +159,9 @@ class MainActivity : AppCompatActivity() {
         when (requestCode) {
             LOCATION_PERMISSION_REQUEST_CODE -> {
                 if (grantResults.firstOrNull() == PackageManager.PERMISSION_DENIED) {
-//                    requestLocationPermission()
+                    Log.i("ble_test","Denied adding permission.")
+                } else {
+                    Log.i("ble_test","Applied adding permission.")
                 }
             }
         }
@@ -177,7 +173,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val scanSettings = ScanSettings.Builder()
-        .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+        .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
         .build()
 
     private var isScanning = false
@@ -190,24 +186,39 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun startBleScan() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !isLocationPermissionGranted) {
             requestLocationPermission()
         }
         else {
             Log.i("ble_test", "scanning...")
-            bleScanner.startScan(null, scanSettings, scanCallback)
+//            bleScanner.startScan(null, scanSettings, scanCallback)
+            bleScanner.startScan(null, scanSettings, getPendingIntent())
             isScanning = true
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun stopBleScan() {
         Log.i("ble_test", "stopped scan.")
-        bleScanner.stopScan(scanCallback)
+//        bleScanner.stopScan(scanCallback)
+        bleScanner.stopScan(getPendingIntent())
         isScanning = false
     }
 
+    @SuppressLint("UnspecifiedImmutableFlag")
+    private fun getPendingIntent(): PendingIntent {
+        return PendingIntent.getBroadcast(
+            this,
+            PENDING_INTENT_REQUEST_CODE,
+            Intent(this.applicationContext, BleBroadcastReceiver::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
+
     private val scanCallback = object : ScanCallback() {
+        @RequiresApi(Build.VERSION_CODES.O)
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             with(result.device) {
                 if (name != null) {
@@ -231,9 +242,19 @@ class MainActivity : AppCompatActivity() {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     Log.i("ble_test", "GattCallback: Successfully connected to $deviceAddress")
-                    // TODO: Store a reference to BluetoothGatt
                     /*  */
                     gatt.discoverServices()
+                    /*  */
+                    val builder = NotificationCompat.Builder(applicationContext, "${R.string.channel_id}")
+                        .setSmallIcon(R.drawable.notification_icon)
+                        .setContentTitle("Adafruit Feather nRF52840 Express")
+                        .setContentText("It's me.")
+                        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                        .setAutoCancel(true)
+                    with(NotificationManagerCompat.from(applicationContext)) {
+                        // notificationId is a unique int for each notification that you must define
+                        notify(0, builder.build())
+                    }
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     Log.i("ble_test", "GattCallback: Successfully disconnected from $deviceAddress")
                     gatt.close()
@@ -287,8 +308,7 @@ class MainActivity : AppCompatActivity() {
                     val device = getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
                     val previousBondState = getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, -1)
                     val bondState = getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1)
-                    val bondTransition = "${previousBondState.toBondStateDescription()} to " +
-                            bondState.toBondStateDescription()
+                    val bondTransition = "${previousBondState.toBondStateDescription()} to " + bondState.toBondStateDescription()
                     Log.i("ble_test", "Bond state change: ${device?.address} bond state changed | $bondTransition")
                 }
             }
@@ -299,6 +319,24 @@ class MainActivity : AppCompatActivity() {
             BluetoothDevice.BOND_BONDING -> "BONDING"
             BluetoothDevice.BOND_NONE -> "NOT BONDED"
             else -> "ERROR: $this"
+        }
+    }
+
+    /* create notification channel */
+    private fun createNotificationChannel() {
+        // Create the NotificationChannel, but only on API 26+ because
+        // the NotificationChannel class is new and not in the support library
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = getString(R.string.channel_name)
+            val descriptionText = getString(R.string.channel_description)
+            val importance = NotificationManager.IMPORTANCE_DEFAULT
+            val channel = NotificationChannel("${R.string.channel_id}", name, importance).apply {
+                description = descriptionText
+            }
+            // Register the channel with the system
+            val notificationManager: NotificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
         }
     }
 }

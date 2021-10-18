@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
         tools:ignore="CoarseFineLocation" />
 
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- devices without BLE capabilities won’t see your app on the Google Play Store. -->
     <uses-feature
         android:name="android.hardware.bluetooth_le"
@@ -33,6 +35,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <receiver android:name="com.example.bletest.BleBroadcastReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.bletest.ACTION_FOUND"/>
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>
