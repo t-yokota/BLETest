@@ -9,8 +9,8 @@
 
     <string name="hello_first_fragment">Hello first fragment</string>
     <string name="hello_second_fragment">Hello second fragment. Arg: %1$s</string>
-    <string name="Stopped">Stopped</string>
-    <string name="Scanning">Scanning</string>
+    <string name="Stopped">STOPPED</string>
+    <string name="Scanning">SCANNING</string>
     <string name="channel_name">BLETestChannel</string>
     <string name="channel_id">BLETestChannel</string>
     <string name="channel_description">A test notification channel of BLETest app.</string>

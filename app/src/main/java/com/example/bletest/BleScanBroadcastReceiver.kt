@@ -16,7 +16,7 @@ import androidx.annotation.RequiresApi
 
 private const val PENDING_INTENT_REQUEST_CODE = 3
 
-class BleBroadcastReceiver: BroadcastReceiver() {
+class BleScanBroadcastReceiver: BroadcastReceiver() {
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onReceive(context: Context, intent: Intent) {
         // Error code
@@ -72,7 +72,7 @@ private fun getPendingIntent(context: Context): PendingIntent {
     return PendingIntent.getBroadcast(
         context,
         PENDING_INTENT_REQUEST_CODE,
-        Intent(context.applicationContext, BleBroadcastReceiver::class.java),
+        Intent(context.applicationContext, BleScanBroadcastReceiver::class.java),
         PendingIntent.FLAG_UPDATE_CURRENT
     )
 }

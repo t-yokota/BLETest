@@ -8,6 +8,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.BroadcastReceiver
@@ -55,17 +56,24 @@ class MainActivity : AppCompatActivity() {
         appBarConfiguration = AppBarConfiguration(navController.graph)
         setupActionBarWithNavController(navController, appBarConfiguration)
 
-        /* */
-        createNotificationChannel()
-
-        /* */
-        binding.fab.setOnClickListener { //view ->
+        binding.fab.setOnClickListener { // view ->
 //            Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
 //                .setAction("Action", null).show()
             if (isScanning) {
                 stopBleScan()
             } else {
                 startBleScan()
+            }
+        }
+
+        val bondedDevices = bluetoothAdapter.bondedDevices
+        if (bondedDevices.size > 0) {
+            Log.i("ble_test", "This device is already bonded to ...")
+            for (device in bondedDevices) {
+                Log.i("ble_test", " - ${device.name}, address: ${device.address}")
+//                if(device.name == "Feather nRF52840 Express"){
+//                    startBleScanUsingPendingIntent()
+//                }
             }
         }
     }
@@ -98,7 +106,7 @@ class MainActivity : AppCompatActivity() {
 
     /* Making sure that Bluetooth is enabled */
     private val bluetoothAdapter: BluetoothAdapter by lazy {
-        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        val bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
         bluetoothManager.adapter
     }
 
@@ -120,7 +128,7 @@ class MainActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
             ENABLE_BLUETOOTH_REQUEST_CODE -> {
-                if (resultCode != Activity.RESULT_OK) {
+                if (resultCode != RESULT_OK) {
                     Log.i("ble_test","BLE is not enabled.")
                 } else {
                     Log.i("ble_test","BLE is enabled.")
@@ -186,94 +194,117 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-    @RequiresApi(Build.VERSION_CODES.O)
+    private var filters: List<ScanFilter> = listOf(
+        ScanFilter.Builder()
+            .setDeviceName("Feather nRF52840 Express")
+            .build()
+    )
+
     private fun startBleScan() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !isLocationPermissionGranted) {
             requestLocationPermission()
         }
         else {
             Log.i("ble_test", "scanning...")
-//            bleScanner.startScan(null, scanSettings, scanCallback)
-            bleScanner.startScan(null, scanSettings, getPendingIntent())
+            bleScanner.startScan(filters, scanSettings, scanCallback)
             isScanning = true
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.O)
     private fun stopBleScan() {
         Log.i("ble_test", "stopped scan.")
-//        bleScanner.stopScan(scanCallback)
-        bleScanner.stopScan(getPendingIntent())
+        bleScanner.stopScan(scanCallback)
         isScanning = false
-    }
-
-    @SuppressLint("UnspecifiedImmutableFlag")
-    private fun getPendingIntent(): PendingIntent {
-        return PendingIntent.getBroadcast(
-            this,
-            PENDING_INTENT_REQUEST_CODE,
-            Intent(this.applicationContext, BleBroadcastReceiver::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT
-        )
     }
 
     private val scanCallback = object : ScanCallback() {
         @RequiresApi(Build.VERSION_CODES.O)
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             with(result.device) {
-                if (name != null) {
-                    Log.i("ble_test", "ScanCallback: Name: ${name ?: "Unnamed"}, address: $address")
-                    /*  */
-                    if (name == "Feather nRF52840 Express") {
-                        stopBleScan()
-                        Log.i("ble_test", "ScanCallback: Connecting to \"$name\", address: $address")
-                        connectGatt(applicationContext, false, gattCallback)
-                    }
+                Log.i("ble_test", "ScanCallback: Name: ${name ?: "Unnamed"}, address: $address")
+                if (isScanning) {
+                    stopBleScan()
                 }
+                Log.i("ble_test", "ScanCallback: Connecting to \"$name\", address: $address")
+                connectGatt(applicationContext, false, gattCallback)
             }
         }
     }
 
-    /* Connecting to a BLE device */ /* Discovering services */
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun startBleScanUsingPendingIntent() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !isLocationPermissionGranted) {
+            requestLocationPermission()
+        }
+        else {
+            Log.i("ble_test", "scanning using PendingIntent ...")
+            bleScanner.startScan(null, scanSettings, getPendingIntentForService())
+//            bleScanner.startScan(null, scanSettings, getPendingIntent_BroadcastReceiver())
+            isScanning = true
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun stopBleScanUsingPendingIntent() {
+        Log.i("ble_test", "stopped scan.")
+        bleScanner.stopScan(getPendingIntentForService())
+//        bleScanner.stopScan(getPendingIntent_BroadcastReceiver())
+        isScanning = false
+    }
+
+    @SuppressLint("UnspecifiedImmutableFlag")
+    private fun getPendingIntentForService(): PendingIntent {
+        return PendingIntent.getService(
+            this,
+            PENDING_INTENT_REQUEST_CODE,
+            Intent(applicationContext, BleScanService::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
+
+    @SuppressLint("UnspecifiedImmutableFlag")
+    private fun getPendingIntentForBroadcastReceiver(): PendingIntent {
+        return PendingIntent.getBroadcast(
+            this,
+            PENDING_INTENT_REQUEST_CODE,
+            Intent(this.applicationContext, BleScanBroadcastReceiver::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
+
+    /* Connecting to a BLE device */
+    /* Discovering services */
     private val gattCallback = object : BluetoothGattCallback() {
+        @RequiresApi(Build.VERSION_CODES.O)
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             val deviceAddress = gatt.device.address
-
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     Log.i("ble_test", "GattCallback: Successfully connected to $deviceAddress")
-                    /*  */
                     gatt.discoverServices()
-                    /*  */
-                    val builder = NotificationCompat.Builder(applicationContext, "${R.string.channel_id}")
-                        .setSmallIcon(R.drawable.notification_icon)
-                        .setContentTitle("Adafruit Feather nRF52840 Express")
-                        .setContentText("It's me.")
-                        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                        .setAutoCancel(true)
-                    with(NotificationManagerCompat.from(applicationContext)) {
-                        // notificationId is a unique int for each notification that you must define
-                        notify(0, builder.build())
-                    }
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     Log.i("ble_test", "GattCallback: Successfully disconnected from $deviceAddress")
                     gatt.close()
                 }
             } else {
                 Log.w("ble_test", "GattCallback: Error $status encountered for $deviceAddress! Disconnecting...")
-//                gatt.close()
-                gatt.connect()
+                gatt.close()
+//                gatt.connect()
             }
         }
 
+        @RequiresApi(Build.VERSION_CODES.O)
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             with(gatt) {
                 Log.i("ble_test", "GattCallback: Discovered ${services.size} services for ${device.address}")
-                printGattTable() // See implementation just above this section
-                // Consider connection setup as complete here
-                /*   */
+                printGattTable()
+                /* bonding */
                 listenToBondStateChanges(applicationContext)
-                bluetoothAdapter.getRemoteDevice(device.address).createBond()
+                if(bluetoothAdapter.getRemoteDevice(device.address).bondState == BluetoothDevice.BOND_BONDED){
+                    startBleScanUsingPendingIntent()
+                } else {
+                    bluetoothAdapter.getRemoteDevice(device.address).createBond()
+                }
             }
         }
     }
@@ -302,6 +333,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val broadcastReceiver = object : BroadcastReceiver() {
+        @RequiresApi(Build.VERSION_CODES.O)
         override fun onReceive(context: Context, intent: Intent) {
             with(intent) {
                 if (action == BluetoothDevice.ACTION_BOND_STATE_CHANGED) {
@@ -310,6 +342,10 @@ class MainActivity : AppCompatActivity() {
                     val bondState = getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1)
                     val bondTransition = "${previousBondState.toBondStateDescription()} to " + bondState.toBondStateDescription()
                     Log.i("ble_test", "Bond state change: ${device?.address} bond state changed | $bondTransition")
+                    findViewById<TextView>(R.id.scanStateText).setText(bondState.toBondStateDescription())
+//                    if(bondState.toBondStateDescription() == "BONDED"){
+//                        startBleScanUsingPendingIntent()
+//                    }
                 }
             }
         }
@@ -319,24 +355,6 @@ class MainActivity : AppCompatActivity() {
             BluetoothDevice.BOND_BONDING -> "BONDING"
             BluetoothDevice.BOND_NONE -> "NOT BONDED"
             else -> "ERROR: $this"
-        }
-    }
-
-    /* create notification channel */
-    private fun createNotificationChannel() {
-        // Create the NotificationChannel, but only on API 26+ because
-        // the NotificationChannel class is new and not in the support library
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = getString(R.string.channel_name)
-            val descriptionText = getString(R.string.channel_description)
-            val importance = NotificationManager.IMPORTANCE_DEFAULT
-            val channel = NotificationChannel("${R.string.channel_id}", name, importance).apply {
-                description = descriptionText
-            }
-            // Register the channel with the system
-            val notificationManager: NotificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
         }
     }
 }
